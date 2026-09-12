@@ -412,6 +412,30 @@
             }
         }
 
+<!-- 책 읽기 및 페이지 추가 모달 -->
+<div id="reader-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] flex flex-col">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <div>
+                <h3 id="reader-title" class="text-lg font-bold text-stone-900">책 제목</h3>
+                <p id="reader-author" class="text-xs text-stone-500">저자</p>
+            </div>
+            <button onclick="closeReaderModal()" class="text-stone-400 hover:text-stone-700 text-sm font-bold">✕</button>
+        </div>
+
+        <!-- 페이지가 보여지는 영역 -->
+        <div class="flex-1 overflow-y-auto space-y-4 pr-2 bg-stone-50 p-3 rounded-xl border border-stone-200 min-h-[300px] flex flex-col items-center justify-center" id="reader-pages-container">
+            <!-- 동적 페이지 이미지 목록 -->
+        </div>
+
+        <!-- 페이지 추가 폼 -->
+        <form id="add-page-form" onsubmit="addBookPage(event)" class="mt-4 pt-3 border-t flex gap-2 items-center">
+            <input type="file" id="page-image" accept="image/*" required class="w-full border border-stone-300 rounded-xl px-3 py-1.5 text-xs text-stone-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200">
+            <button type="submit" class="whitespace-nowrap px-4 py-2 text-xs bg-amber-800 text-white font-semibold rounded-xl hover:bg-amber-900 transition">페이지 추가</button>
+        </form>
+    </div>
+</div>
+
         function addBookCardToUI(title, author, imagePath) {
             const grid = document.getElementById('book-grid');
             const card = document.createElement('div');
