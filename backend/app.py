@@ -140,7 +140,8 @@ async def upload_page(
         book_info = {
             "title": title,
             "author": author,
-            "image": image_url
+            "image": image_url,
+            "pages": [image_url]  # 첫 번째 사진을 페이지 목록의 시작으로 저장
         }
         
         if email not in db["books"]:
