@@ -17,6 +17,7 @@
             </h1>
             <div class="flex items-center gap-3">
                 <button id="admin-nav-btn" onclick="openAdminModal()" class="hidden text-xs font-medium bg-stone-800 text-white px-3 py-1.5 rounded-lg transition hover:bg-stone-900">운영자 패널</button>
+                <button id="edit-info-btn" onclick="openEditModal()" class="hidden text-xs font-medium text-stone-700 border border-stone-300 px-3 py-1.5 rounded-lg transition hover:bg-stone-100">정보 수정</button>
                 <span class="text-xs text-stone-500 hidden sm:inline" id="user-display"></span>
                 <button id="auth-btn" onclick="handleLogout()" class="hidden text-xs font-medium text-stone-600 hover:text-stone-900 border border-stone-300 px-3 py-1.5 rounded-lg transition">로그아웃</button>
             </div>
@@ -76,6 +77,25 @@
         </div>
 
     </main>
+
+    <!-- 정보 수정 모달 -->
+    <div id="edit-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4">
+            <h3 class="text-lg font-bold text-stone-900">비밀번호 변경</h3>
+            <div>
+                <label class="block text-xs font-medium text-stone-600 mb-1">현재 비밀번호</label>
+                <input type="password" id="current-password" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-stone-600 mb-1">새 비밀번호</label>
+                <input type="password" id="new-password" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
+            </div>
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 text-sm text-stone-600 hover:bg-stone-100 rounded-xl transition">취소</button>
+                <button type="button" onclick="updatePassword()" class="px-4 py-2 text-sm bg-amber-800 text-white font-semibold rounded-xl hover:bg-amber-900 transition">변경하기</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 운영자 패널 모달 -->
     <div id="admin-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
@@ -149,11 +169,13 @@
             const userDisplay = document.getElementById('user-display');
             const authBtn = document.getElementById('auth-btn');
             const adminNavBtn = document.getElementById('admin-nav-btn');
+            const editInfoBtn = document.getElementById('edit-info-btn');
 
             if (currentUser) {
                 userDisplay.innerText = currentUser + " 님";
                 userDisplay.classList.remove('hidden');
                 authBtn.classList.remove('hidden');
+                editInfoBtn.classList.remove('hidden');
                 
                 if (isAdmin) {
                     adminNavBtn.classList.remove('hidden');
@@ -167,6 +189,7 @@
                 userDisplay.classList.add('hidden');
                 authBtn.classList.add('hidden');
                 adminNavBtn.classList.add('hidden');
+                editInfoBtn.classList.add('hidden');
                 switchView('login');
             }
         }
@@ -241,6 +264,47 @@
             }
         }
 
+        function openEditModal() {
+            document.getElementById('edit-modal').classList.remove('hidden');
+            document.getElementById('edit-modal').classList.add('flex');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+            document.getElementById('edit-modal').classList.remove('flex');
+        }
+
+        async function updatePassword() {
+            const currentUser = localStorage.getItem("skybooks_logged_in_user");
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+
+            if (!currentPassword || !newPassword) {
+                alert("현재 비밀번호와 새 비밀번호를 모두 입력해주세요.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('email', currentUser);
+            formData.append('current_password', currentPassword);
+            formData.append('new_password', newPassword);
+
+            try {
+                const res = await fetch(API_BASE + "/api/update-password", { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    alert(data.message);
+                    closeEditModal();
+                    document.getElementById('current-password').value = "";
+                    document.getElementById('new-password').value = "";
+                } else {
+                    alert(data.detail || "비밀번호 변경 실패");
+                }
+            } catch (err) {
+                alert("서버 통신 실패");
+            }
+        }
+
         async function loadBooks(email) {
             try {
                 const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
@@ -251,7 +315,7 @@
                 if (data.books && data.books.length > 0) {
                     document.getElementById('book-count').innerText = "총 " + data.books.length + "권의 책이 있습니다.";
                     data.books.forEach(function(book) {
-                        addBookCardToUI(book.title, book.author);
+                        addBookCardToUI(book.title, book.author, book.image);
                     });
                 } else {
                     document.getElementById('book-count').innerText = "등록된 책이 없습니다. 책을 추가해보세요!";
@@ -337,7 +401,7 @@
                     const result = await response.json();
                     alert(result.message);
                     closeUploadModal();
-                    addBookCardToUI(title, author);
+                    addBookCardToUI(title, author, result.book.image);
                     document.getElementById('upload-form').reset();
                     loadBooks(currentUser);
                 } else {
@@ -348,11 +412,29 @@
             }
         }
 
-        function addBookCardToUI(title, author) {
+        function addBookCardToUI(title, author, imagePath) {
             const grid = document.getElementById('book-grid');
             const card = document.createElement('div');
             card.className = "bg-white p-3 rounded-2xl shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-md transition";
-            card.innerHTML = '<div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3"><span class="text-stone-600 font-semibold text-sm">' + title + '</span></div><div><h3 class="font-bold text-stone-800 text-sm truncate">' + title + '</h3><p class="text-xs text-stone-500 truncate mt-0.5">' + author + '</p><div class="mt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-100 pt-2"><span>등록 완료</span><span class="text-amber-800 font-medium">보정됨</span></div></div>';
+            
+            // 이미지 경로가 있는 경우 실제 이미지 표시, 없으면 텍스트 대체
+            let imageHtml = imagePath 
+                ? `<img src="${API_BASE}${imagePath}" alt="${title}" class="w-full h-full object-cover rounded-xl">`
+                : `<span class="text-stone-600 font-semibold text-sm">${title}</span>`;
+
+            card.innerHTML = `
+                <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
+                    ${imageHtml}
+                </div>
+                <div>
+                    <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
+                    <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
+                    <div class="mt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-100 pt-2">
+                        <span>등록 완료</span>
+                        <span class="text-amber-800 font-medium">보정됨</span>
+                    </div>
+                </div>
+            `;
             grid.prepend(card);
         }
     </script>
