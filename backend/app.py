@@ -23,8 +23,8 @@ users_db = {}
 # 계정별 책 목록 데이터베이스 {email: [ {title, author, image}, ... ] }
 books_db = {}  
 
-# 👑 여기에 운영자로 지정할 이메일들을 자유롭게 추가하면 돼!
-ADMIN_EMAILS = ["yooneeo@gmail.com"]  # 예시: 네 실제 이메일로 변경 가능
+# 운영자로 지정할 이메일들
+ADMIN_EMAILS = ["sungkook@example.com"]  # 네 이메일로 변경 가능
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
@@ -39,9 +39,17 @@ async def login(email: str = Form(...), password: str = Form(...)):
     if email not in users_db or users_db[email] != password:
         raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
     
-    # 등록된 운영자 이메일 목록에 포함되어 있는지 확인
     is_admin = (email in ADMIN_EMAILS)
     return {"status": "success", "message": "로그인 성공!", "email": email, "isAdmin": is_admin}
+
+# [정보 수정] 비밀번호 변경 API
+@app.post("/api/update-password")
+async def update_password(email: str = Form(...), current_password: str = Form(...), new_password: str = Form(...)):
+    if email not in users_db or users_db[email] != current_password:
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+    
+    users_db[email] = new_password
+    return {"status": "success", "message": "비밀번호가 성공적으로 변경되었습니다!"}
 
 @app.get("/api/books")
 async def get_books(email: str):
@@ -74,7 +82,8 @@ async def upload_page(
     if email not in users_db:
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
 
-    file_path = os.path.join(UPLOAD_DIR, f"{email}_{file.filename}")
+    file_name = f"{email}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, file_name)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
@@ -83,15 +92,18 @@ async def upload_page(
     if img is not None:
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
         _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        processed_path = os.path.join(UPLOAD_DIR, f"processed_{email}_{file.filename}")
+        processed_file_name = f"processed_{file_name}"
+        processed_path = os.path.join(UPLOAD_DIR, processed_file_name)
         cv2.imwrite(processed_path, thresh)
+        # 프론트엔드에서 이미지를 불러올 수 있도록 상대 경로 또는 파일 이름 제공
+        image_url = f"/uploads/{processed_file_name}"
     else:
-        processed_path = file_path
+        image_url = f"/uploads/{file_name}"
 
     book_info = {
         "title": title,
         "author": author,
-        "image": processed_path
+        "image": image_url
     }
     
     if email not in books_db:
