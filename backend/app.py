@@ -1,23 +1,51 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import os
+import json
+import base64
+import secrets
+import threading
+from datetime import datetime, timedelta
+
 import cv2
 import numpy as np
-import base64
-import json
-import os
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from passlib.context import CryptContext
 
 app = FastAPI()
 
+# ---------------------------------------------------------------------------
+# CORS: "*" + allow_credentials=True 조합은 위험하므로, 실제 프론트엔드가
+# 서비스되는 origin만 명시적으로 허용합니다. 배포 전에 아래 목록을 실제
+# 도메인으로 바꿔주세요 (예: "https://yourapp.com").
+# ---------------------------------------------------------------------------
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    # "https://yourapp.com",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_FILE = "database.json"
+db_lock = threading.Lock()  # 동시 쓰기로 인한 파일 손상 방지
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+ADMIN_EMAILS = ["yooneeo@gmail.com"]
+
+# 세션 토큰 만료 시간
+SESSION_TTL = timedelta(hours=12)
+
+
+# ---------------------------------------------------------------------------
+# 데이터 저장/로드
+# ---------------------------------------------------------------------------
 def load_data():
     if os.path.exists(DB_FILE):
         try:
@@ -25,110 +53,189 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {"users": {}, "books": {}}
+    return {"users": {}, "books": {}, "sessions": {}}
+
 
 def save_data(data):
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+    # 임시 파일에 쓴 뒤 교체 → 쓰는 도중 프로세스가 죽어도 파일이 깨지지 않음
+    tmp_file = DB_FILE + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+    os.replace(tmp_file, DB_FILE)
 
-ADMIN_EMAILS = ["yooneeo@gmail.com"]
 
+# ---------------------------------------------------------------------------
+# 인증 유틸
+# ---------------------------------------------------------------------------
+def create_session(db, email: str) -> str:
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.utcnow() + SESSION_TTL).isoformat()
+    db["sessions"][token] = {"email": email, "expires_at": expires_at}
+    return token
+
+
+def get_current_user(authorization: str = Header(default=None)) -> str:
+    """
+    Authorization: Bearer <token> 헤더에서 사용자 이메일을 조회.
+    프론트엔드는 이제 email을 직접 보내는 대신 로그인 시 받은 토큰을
+    이 헤더에 담아 보내야 합니다.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="인증 토큰이 필요합니다.")
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    with db_lock:
+        db = load_data()
+        session = db["sessions"].get(token)
+
+        if not session:
+            raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
+
+        if datetime.utcnow() > datetime.fromisoformat(session["expires_at"]):
+            del db["sessions"][token]
+            save_data(db)
+            raise HTTPException(status_code=401, detail="토큰이 만료되었습니다. 다시 로그인해주세요.")
+
+        return session["email"]
+
+
+# ---------------------------------------------------------------------------
+# 회원가입 / 로그인 / 비밀번호 변경
+# ---------------------------------------------------------------------------
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
-    db = load_data()
-    if email in db["users"]:
-        raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
-    
-    db["users"][email] = password
-    db["books"][email] = []
-    save_data(db)
-    
+    with db_lock:
+        db = load_data()
+        if email in db["users"]:
+            raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
+
+        db["users"][email] = pwd_context.hash(password)
+        db["books"][email] = []
+        save_data(db)
+
     return {"status": "success", "message": "회원가입이 완료되었습니다!"}
+
 
 @app.post("/api/login")
 async def login(email: str = Form(...), password: str = Form(...)):
-    db = load_data()
-    if email not in db["users"] or db["users"][email] != password:
-        raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
-    
-    is_admin = (email in ADMIN_EMAILS)
-    return {"status": "success", "message": "로그인 성공!", "email": email, "isAdmin": is_admin}
+    with db_lock:
+        db = load_data()
+        stored_hash = db["users"].get(email)
+
+        # 존재하지 않는 이메일과 틀린 비밀번호를 동일한 메시지로 처리
+        # (이메일 존재 여부가 노출되지 않도록)
+        if not stored_hash or not pwd_context.verify(password, stored_hash):
+            raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
+
+        token = create_session(db, email)
+        save_data(db)
+
+    is_admin = email in ADMIN_EMAILS
+    return {
+        "status": "success",
+        "message": "로그인 성공!",
+        "email": email,
+        "isAdmin": is_admin,
+        "token": token,
+    }
+
+
+@app.post("/api/logout")
+async def logout(authorization: str = Header(default=None)):
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        with db_lock:
+            db = load_data()
+            db["sessions"].pop(token, None)
+            save_data(db)
+    return {"status": "success", "message": "로그아웃되었습니다."}
+
 
 @app.post("/api/update-password")
-async def update_password(email: str = Form(...), current_password: str = Form(...), new_password: str = Form(...)):
-    db = load_data()
-    if email not in db["users"] or db["users"][email] != current_password:
-        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
-    
-    db["users"][email] = new_password
-    save_data(db)
-    
+async def update_password(
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    email: str = Depends(get_current_user),
+):
+    with db_lock:
+        db = load_data()
+        stored_hash = db["users"].get(email)
+
+        if not stored_hash or not pwd_context.verify(current_password, stored_hash):
+            raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+
+        db["users"][email] = pwd_context.hash(new_password)
+        save_data(db)
+
     return {"status": "success", "message": "비밀번호가 성공적으로 변경되었습니다!"}
 
+
+# ---------------------------------------------------------------------------
+# 책 관련 API — 이제 email을 쿼리/폼으로 받지 않고 토큰에서 추출합니다.
+# ---------------------------------------------------------------------------
 @app.get("/api/books")
-async def get_books(email: str):
+async def get_books(email: str = Depends(get_current_user)):
     db = load_data()
     user_books = db["books"].get(email, [])
     return {"books": user_books}
 
+
 @app.get("/api/admin/all-data")
-async def get_all_data(email: str):
-    db = load_data()
+async def get_all_data(email: str = Depends(get_current_user)):
     if email not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
-    
+
+    db = load_data()
     all_users_info = []
     for user_email in db["users"].keys():
         user_books = db["books"].get(user_email, [])
         all_users_info.append({
             "email": user_email,
             "bookCount": len(user_books),
-            "books": user_books
+            "books": user_books,
         })
     return {"users": all_users_info}
 
+
 @app.delete("/api/books")
-async def delete_book(email: str = Form(...), title: str = Form(...)):
-    db = load_data()
-    if email not in db["users"]:
-        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
-    
-    user_books = db["books"].get(email, [])
-    new_books = [book for book in user_books if book["title"] != title]
-    
-    if len(new_books) == len(user_books):
-        raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
-    
-    db["books"][email] = new_books
-    save_data(db)
-    
+async def delete_book(title: str = Form(...), email: str = Depends(get_current_user)):
+    with db_lock:
+        db = load_data()
+        user_books = db["books"].get(email, [])
+        new_books = [book for book in user_books if book["title"] != title]
+
+        if len(new_books) == len(user_books):
+            raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
+
+        db["books"][email] = new_books
+        save_data(db)
+
     return {"status": "success", "message": f"'{title}' 책이 삭제되었습니다."}
+
 
 def scan_book_image(image_bytes):
     np_arr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     if image is None:
         return None
-    _, encoded_img = cv2.imencode('.jpg', image)
+    _, encoded_img = cv2.imencode(".jpg", image)
     return encoded_img.tobytes()
+
 
 @app.post("/api/upload-page")
 async def upload_page(
-    email: str = Form(...),
     title: str = Form(...),
     author: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    email: str = Depends(get_current_user),
 ):
-    db = load_data()
-    if email not in db["users"]:
-        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
-
     try:
         contents = await file.read()
         processed_bytes = scan_book_image(contents)
-        
+
         if processed_bytes is not None:
-            base64_str = base64.b64encode(processed_bytes).decode('utf-8')
+            base64_str = base64.b64encode(processed_bytes).decode("utf-8")
             image_url = f"data:image/jpeg;base64,{base64_str}"
         else:
             image_url = ""
@@ -137,63 +244,61 @@ async def upload_page(
             "title": title,
             "author": author,
             "image": image_url,
-            "pages": [image_url]
+            "pages": [image_url],
         }
-        
-        if email not in db["books"]:
-            db["books"][email] = []
-        db["books"][email].append(book_info)
-        
-        save_data(db)
+
+        with db_lock:
+            db = load_data()
+            db["books"].setdefault(email, []).append(book_info)
+            save_data(db)
 
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
-            "book": book_info
+            "book": book_info,
         }
     except Exception as e:
         print(f"업로드 에러 발생: {e}")
-        raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="업로드 중 오류가 발생했습니다.")
+
 
 @app.post("/api/add-page")
 async def add_page(
-    email: str = Form(...),
     title: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    email: str = Depends(get_current_user),
 ):
-    db = load_data()
-    if email not in db["users"]:
-        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
-
-    user_books = db["books"].get(email, [])
-    target_book = None
-    for book in user_books:
-        if book["title"] == title:
-            target_book = book
-            break
-
-    if not target_book:
-        raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
-
     try:
         contents = await file.read()
         processed_bytes = scan_book_image(contents)
-        
+
         if processed_bytes is not None:
-            base64_str = base64.b64encode(processed_bytes).decode('utf-8')
+            base64_str = base64.b64encode(processed_bytes).decode("utf-8")
             image_url = f"data:image/jpeg;base64,{base64_str}"
         else:
             image_url = ""
 
-        if "pages" not in target_book:
-            target_book["pages"] = [target_book.get("image", "")]
-        
-        target_book["pages"].append(image_url)
-        save_data(db)
+        with db_lock:
+            db = load_data()
+            user_books = db["books"].get(email, [])
+            target_book = next((b for b in user_books if b["title"] == title), None)
+
+            if not target_book:
+                raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
+
+            if "pages" not in target_book:
+                target_book["pages"] = [target_book.get("image", "")]
+
+            target_book["pages"].append(image_url)
+            save_data(db)
 
         return {"status": "success", "message": "페이지가 추가되었습니다!", "pages": target_book["pages"]}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"페이지 추가 실패: {str(e)}")
+        print(f"페이지 추가 에러 발생: {e}")
+        raise HTTPException(status_code=500, detail="페이지 추가 중 오류가 발생했습니다.")
+
 
 if __name__ == "__main__":
     import uvicorn
