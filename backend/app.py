@@ -18,10 +18,13 @@ app.add_middleware(
 UPLOAD_DIR = "../uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 임시 회원 데이터베이스 (실서비스 시 DB 사용)
-users_db = {"admin@skybooks.com": "admin1234"}  # 기본 운영자 계정 포함
-# 계정별 책 목록 데이터베이스
+# 회원 데이터베이스 {email: password}
+users_db = {}  
+# 계정별 책 목록 데이터베이스 {email: [ {title, author, image}, ... ] }
 books_db = {}  
+
+# 👑 여기에 운영자로 지정할 이메일들을 자유롭게 추가하면 돼!
+ADMIN_EMAILS = ["sungkook@example.com"]  # 예시: 네 실제 이메일로 변경 가능
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
@@ -36,8 +39,8 @@ async def login(email: str = Form(...), password: str = Form(...)):
     if email not in users_db or users_db[email] != password:
         raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
     
-    # 운영자 여부 판단 (admin@skybooks.com 이면 운영자 권한 부여)
-    is_admin = (email == "admin@skybooks.com")
+    # 등록된 운영자 이메일 목록에 포함되어 있는지 확인
+    is_admin = (email in ADMIN_EMAILS)
     return {"status": "success", "message": "로그인 성공!", "email": email, "isAdmin": is_admin}
 
 @app.get("/api/books")
@@ -48,7 +51,7 @@ async def get_books(email: str):
 # [운영자 전용] 전체 회원 및 서재 데이터 조회
 @app.get("/api/admin/all-data")
 async def get_all_data(email: str):
-    if email != "admin@skybooks.com":
+    if email not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     
     all_users_info = []
