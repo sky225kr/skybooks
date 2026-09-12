@@ -19,8 +19,8 @@ users_db = {}
 # 계정별 책 목록 데이터베이스 {email: [ {title, author, image}, ... ] }
 books_db = {}  
 
-# 운영자로 지정할 이메일들
-ADMIN_EMAILS = ["yooneeo@gmail.com"]  # 네 이메일로 변경 가능
+# 👑 운영자로 지정할 이메일 목록 (원하는 이메일로 변경 가능)
+ADMIN_EMAILS = ["admin@skybooks.com"]
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
@@ -77,24 +77,20 @@ async def upload_page(
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
 
     try:
-        # 업로드된 파일을 메모리 바이트로 읽기
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         
-        # OpenCV로 이미지 디코딩
+        # OpenCV 디코딩
         img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
         
         if img is not None:
-            # OpenCV 보정 처리 (가우스 블러 + 오츠 이진화)
             blurred = cv2.GaussianBlur(img, (5, 5), 0)
             _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             processed_img = thresh
         else:
-            # 그레이스케일 변환 실패 시 컬러로 읽어서 처리 시도
             img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             processed_img = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY) if img_color is not None else nparr
 
-        # 처리된 이미지를 메모리상에서 jpg 코딩 후 Base64로 변환
         success, encoded_img = cv2.imencode('.jpg', processed_img)
         if success:
             base64_str = base64.b64encode(encoded_img).decode('utf-8')
