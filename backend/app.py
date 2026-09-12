@@ -33,7 +33,7 @@ def save_data(data):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-ADMIN_EMAILS = ["admin@skybooks.com"]
+ADMIN_EMAILS = ["yooneeo@gmail.com"]
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
