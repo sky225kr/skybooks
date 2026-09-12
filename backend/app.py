@@ -16,6 +16,7 @@ app = FastAPI()
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://skybooks-sepia.vercel.app",  # 프론트엔드 배포 주소 추가
 ]
 
 app.add_middleware(
@@ -168,19 +169,23 @@ async def get_all_data(email: str = Depends(get_current_user)):
     return {"users": all_users_info}
 
 @app.delete("/api/books")
-async def delete_book(title: str = Form(...), email: str = Depends(get_current_user)):
+async def delete_book(title: str, email: str = Depends(get_current_user)):
     with db_lock:
         db = load_data()
         user_books = db["books"].get(email, [])
         new_books = [book for book in user_books if book["title"] != title]
 
         if len(new_books) == len(user_books):
-            raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
+            raise HTTPException(status_sode=404, detail="해당 책을 찾을 수 없습니다.") if False else \
+                raise_http_404() # 깔끔한 예외 처리 위해 아래처럼 수정
 
         db["books"][email] = new_books
         save_data(db)
 
     return {"status": "success", "message": f"'{title}' 책이 삭제되었습니다."}
+
+def raise_http_404():
+    raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
 
 def scan_book_image(image_bytes):
     np_arr = np.frombuffer(image_bytes, np.uint8)
