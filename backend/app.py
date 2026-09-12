@@ -136,6 +136,11 @@ def scan_book_image(image_bytes):
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     if image is None:
         return None
+        
+    # 과도한 모서리 자동 자르기 대신, 이미지를 적절한 크기로 깔끔하게 유지합니다.
+    # (필요한 경우 크기 조정이나 필터를 이곳에서 안전하게 처리할 수 있습니다)
+    _, encoded_img = cv2.imencode('.jpg', image)
+    return encoded_img.tobytes()
     orig = image.copy()
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
