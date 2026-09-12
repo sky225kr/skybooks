@@ -107,16 +107,60 @@ async def delete_book(email: str = Form(...), title: str = Form(...)):
     return {"status": "success", "message": f"'{title}' 책이 삭제되었습니다."}
 
 
-# --- 이미지 처리 함수 ---
+# --- 스캔 보정 관련 함수들 ---
+def order_points(pts):
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    return rect
+
+def four_point_transform(image, pts):
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+    maxWidth = max(int(widthA), int(widthB))
+    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+    maxHeight = max(int(heightA), int(heightB))
+    dst = np.array([[0, 0], [maxWidth - 1, 0], [maxWidth - 1, maxHeight - 1], [0, maxHeight - 1]], dtype="float32")
+    M = cv2.getPerspectiveTransform(rect, dst)
+    return cv2.warpPerspective(image, M, (maxWidth, maxHeight))
+
 def scan_book_image(image_bytes):
     np_arr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
     if image is None:
         return None
         
-    # 원본 이미지를 안전하게 JPEG 형식으로 변환하여 반환
-    _, encoded_img = cv2.imencode('.jpg', image)
-    return encoded_img.tobytes()
+    orig = image.copy()
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edged = cv2.Canny(gray, 75, 200)
+    
+    cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:5]
+    
+    screenCnt = None
+    for c in cnts:
+        peri = cv2.arcLength(c, True)
+        approx = cv2.approxPolyDP(c, 0.02 * peri, True)
+        if len(approx) == 4:
+            screenCnt = approx
+            break
+            
+    # 모서리를 찾으면 반듯하게 펴고, 못 찾으면 안전하게 원본 반환
+    if screenCnt is not None:
+        warped = four_point_transform(orig, screenCnt.reshape(4, 2))
+        _, encoded_img = cv2.imencode('.jpg', warped)
+        return encoded_img.tobytes()
+    else:
+        _, encoded_img = cv2.imencode('.jpg', orig)
+        return encoded_img.tobytes()
 
 
 @app.post("/api/upload-page")
