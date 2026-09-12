@@ -15,7 +15,8 @@
             <h1 class="text-xl font-bold tracking-tight text-amber-900 flex items-center gap-2 cursor-pointer" onclick="checkLoginStatus()">
                 📚 sky북스 <span class="text-xs font-normal bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">내 서재</span>
             </h1>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
+                <button id="admin-nav-btn" onclick="openAdminModal()" class="hidden text-xs font-medium bg-stone-800 text-white px-3 py-1.5 rounded-lg transition hover:bg-stone-900">운영자 패널</button>
                 <span class="text-xs text-stone-500 hidden sm:inline" id="user-display"></span>
                 <button id="auth-btn" onclick="handleLogout()" class="hidden text-xs font-medium text-stone-600 hover:text-stone-900 border border-stone-300 px-3 py-1.5 rounded-lg transition">로그아웃</button>
             </div>
@@ -46,7 +47,8 @@
                 <h3 class="text-xl font-bold text-stone-900">회원가입</h3>
                 <p class="text-xs text-stone-500">새로운 sky북스 계정을 만드세요.</p>
                 <input type="email" id="signup-email" placeholder="사용할 이메일" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
-                <input type="password" id="signup-password" placeholder="사용할 비밀번호" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
+                <input type="password" id="signup-password" placeholder="비밀번호" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
+                <input type="password" id="signup-password-confirm" placeholder="비밀번호 확인" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
                 <button onclick="performSignup()" class="w-full py-2 bg-amber-800 text-white text-sm font-semibold rounded-xl hover:bg-amber-900 transition">가입 완료</button>
                 <div class="text-xs text-stone-400 pt-2 border-t border-stone-100 flex justify-between">
                     <span>이미 계정이 있으신가요?</span>
@@ -74,6 +76,19 @@
         </div>
 
     </main>
+
+    <!-- 운영자 패널 모달 -->
+    <div id="admin-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-lg font-bold text-stone-900">🛠️ 운영자 패널 (전체 회원 및 서재 현황)</h3>
+                <button onclick="closeAdminModal()" class="text-stone-400 hover:text-stone-700 text-sm font-bold">✕</button>
+            </div>
+            <div id="admin-user-list" class="flex-1 overflow-y-auto space-y-4 pr-2">
+                <!-- 운영자 데이터 동적 렌더링 -->
+            </div>
+        </div>
+    </div>
 
     <!-- 새 책 추가 모달 -->
     <div id="upload-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
@@ -129,18 +144,29 @@
 
         function checkLoginStatus() {
             const currentUser = localStorage.getItem("skybooks_logged_in_user");
+            const isAdmin = localStorage.getItem("skybooks_is_admin") === "true";
+            
             const userDisplay = document.getElementById('user-display');
             const authBtn = document.getElementById('auth-btn');
+            const adminNavBtn = document.getElementById('admin-nav-btn');
 
             if (currentUser) {
                 userDisplay.innerText = currentUser + " 님";
                 userDisplay.classList.remove('hidden');
                 authBtn.classList.remove('hidden');
+                
+                if (isAdmin) {
+                    adminNavBtn.classList.remove('hidden');
+                } else {
+                    adminNavBtn.classList.add('hidden');
+                }
+
                 switchView('bookstore');
                 loadBooks(currentUser);
             } else {
                 userDisplay.classList.add('hidden');
                 authBtn.classList.add('hidden');
+                adminNavBtn.classList.add('hidden');
                 switchView('login');
             }
         }
@@ -148,9 +174,15 @@
         async function performSignup() {
             const email = document.getElementById('signup-email').value;
             const password = document.getElementById('signup-password').value;
+            const passwordConfirm = document.getElementById('signup-password-confirm').value;
 
-            if (!email || !password) {
-                alert("이메일과 비밀번호를 모두 입력해주세요.");
+            if (!email || !password || !passwordConfirm) {
+                alert("모든 항목을 입력해주세요.");
+                return;
+            }
+
+            if (password !== passwordConfirm) {
+                alert("비밀번호가 일치하지 않습니다. 다시 확인해주세요.");
                 return;
             }
 
@@ -190,6 +222,7 @@
                 const data = await res.json();
                 if (res.ok) {
                     localStorage.setItem("skybooks_logged_in_user", data.email);
+                    localStorage.setItem("skybooks_is_admin", data.isAdmin);
                     alert("로그인 성공!");
                     checkLoginStatus();
                 } else {
@@ -203,6 +236,7 @@
         function handleLogout() {
             if (confirm("로그아웃 하시겠습니까?")) {
                 localStorage.removeItem("skybooks_logged_in_user");
+                localStorage.removeItem("skybooks_is_admin");
                 checkLoginStatus();
             }
         }
@@ -225,6 +259,49 @@
             } catch (err) {
                 document.getElementById('book-count').innerText = "서버 연결 확인 필요";
             }
+        }
+
+        async function openAdminModal() {
+            const currentUser = localStorage.getItem("skybooks_logged_in_user");
+            try {
+                const res = await fetch(API_BASE + "/api/admin/all-data?email=" + encodeURIComponent(currentUser));
+                const data = await res.json();
+                if (res.ok) {
+                    const listContainer = document.getElementById('admin-user-list');
+                    listContainer.innerHTML = "";
+
+                    data.users.forEach(user => {
+                        let booksHtml = user.books.length > 0 
+                            ? user.books.map(b => `<span class="bg-amber-50 text-amber-900 border border-amber-200 text-[11px] px-2 py-1 rounded-lg">${b.title} (${b.author})</span>`).join(' ')
+                            : `<span class="text-stone-400 text-xs">등록된 책 없음</span>`;
+
+                        const userDiv = document.createElement('div');
+                        userDiv.className = "p-4 bg-stone-50 rounded-xl border border-stone-200 space-y-2";
+                        userDiv.innerHTML = `
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-sm text-stone-900">👤 ${user.email}</span>
+                                <span class="text-xs bg-stone-200 px-2 py-0.5 rounded-full text-stone-700">총 ${user.bookCount}권</span>
+                            </div>
+                            <div class="flex flex-wrap gap-1 mt-2">
+                                ${booksHtml}
+                            </div>
+                        `;
+                        listContainer.appendChild(userDiv);
+                    });
+
+                    document.getElementById('admin-modal').classList.remove('hidden');
+                    document.getElementById('admin-modal').classList.add('flex');
+                } else {
+                    alert(data.detail || "권한이 없습니다.");
+                }
+            } catch (err) {
+                alert("운영자 데이터 로딩 실패");
+            }
+        }
+
+        function closeAdminModal() {
+            document.getElementById('admin-modal').classList.add('hidden');
+            document.getElementById('admin-modal').classList.remove('flex');
         }
 
         function openUploadModal() {
