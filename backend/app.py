@@ -207,6 +207,16 @@ def scan_book_image(image_bytes):
         _, encoded_img = cv2.imencode('.jpg', orig)
         return encoded_img.tobytes()
 
+
+@app.post("/api/upload-page")
+async def upload_page(email: str = Form(...), title: str = Form(...), file: UploadFile = File(...)):
+    contents = await file.read()
+    
+    # 사용자가 올린 사진을 스캔본처럼 반듯하게 펴주는 보정 함수 적용
+    contents = scan_book_image(contents)
+    
+    # 이후 기존 파일 저장 코드 진행...
+
 @app.post("/api/add-page")
 async def add_page(
     email: str = Form(...),
