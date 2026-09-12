@@ -20,7 +20,7 @@ users_db = {}
 books_db = {}  
 
 # 운영자로 지정할 이메일들
-ADMIN_EMAILS = ["sungkook@example.com"]  # 네 이메일로 변경 가능
+ADMIN_EMAILS = ["yooneeo@gmail.com"]  # 네 이메일로 변경 가능
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
