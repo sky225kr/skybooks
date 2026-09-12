@@ -159,6 +159,52 @@ async def upload_page(
         print(f"업로드 에러 발생: {e}")
         raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
 
+@app.post("/api/add-page")
+async def add_page(
+    email: str = Form(...),
+    title: str = Form(...),
+    file: UploadFile = File(...)
+):
+    db = load_data()
+    if email not in db["users"]:
+        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
+
+    user_books = db["books"].get(email, [])
+    target_book = None
+    for book in user_books:
+        if book["title"] == title:
+            target_book = book
+            break
+
+    if not target_book:
+        raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
+
+    try:
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img_color is not None:
+            success, encoded_img = cv2.imencode('.jpg', img_color)
+            if success:
+                base64_str = base64.b64encode(encoded_img).decode('utf-8')
+                image_url = f"data:image/jpeg;base64,{base64_str}"
+            else:
+                image_url = ""
+        else:
+            image_url = ""
+
+        # 기존 book_info에 'pages'가 없으면 생성 후 추가
+        if "pages" not in target_book:
+            target_book["pages"] = [target_book.get("image", "")]
+        
+        target_book["pages"].append(image_url)
+        save_data(db)
+
+        return {"status": "success", "message": "페이지가 추가되었습니다!", "pages": target_book["pages"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"페이지 추가 실패: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
