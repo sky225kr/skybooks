@@ -138,6 +138,9 @@ def scan_book_image(image_bytes):
         return None
         
     orig = image.copy()
+    H, W = image.shape[:2]
+    total_area = H * W
+    
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
     edged = cv2.Canny(gray, 75, 200)
@@ -147,20 +150,27 @@ def scan_book_image(image_bytes):
     
     screenCnt = None
     for c in cnts:
+        area = cv2.contourArea(c)
+        if area < total_area * 0.2 or area > total_area * 0.95:
+            continue
+            
         peri = cv2.arcLength(c, True)
         approx = cv2.approxPolyDP(c, 0.02 * peri, True)
         if len(approx) == 4:
             screenCnt = approx
             break
             
-    # 모서리를 찾으면 반듯하게 펴고, 못 찾으면 안전하게 원본 반환
     if screenCnt is not None:
-        warped = four_point_transform(orig, screenCnt.reshape(4, 2))
-        _, encoded_img = cv2.imencode('.jpg', warped)
-        return encoded_img.tobytes()
-    else:
-        _, encoded_img = cv2.imencode('.jpg', orig)
-        return encoded_img.tobytes()
+        try:
+            warped = four_point_transform(orig, screenCnt.reshape(4, 2))
+            if warped.shape[0] > 100 and warped.shape[1] > 100:
+                _, encoded_img = cv2.imencode('.jpg', warped)
+                return encoded_img.tobytes()
+        except Exception:
+            pass
+            
+    _, encoded_img = cv2.imencode('.jpg', orig)
+    return encoded_img.tobytes()
 
 
 @app.post("/api/upload-page")
