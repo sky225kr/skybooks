@@ -96,7 +96,6 @@ async def delete_book(email: str = Form(...), title: str = Form(...)):
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
     
     user_books = db["books"].get(email, [])
-    # 일치하는 제목을 가진 책을 제외하고 남김
     new_books = [book for book in user_books if book["title"] != title]
     
     if len(new_books) == len(user_books):
@@ -108,58 +107,7 @@ async def delete_book(email: str = Form(...), title: str = Form(...)):
     return {"status": "success", "message": f"'{title}' 책이 삭제되었습니다."}
 
 
-@app.post("/api/upload-page")
-async def upload_page(
-    email: str = Form(...),
-    title: str = Form(...),
-    author: str = Form(...),
-    file: UploadFile = File(...)
-):
-    db = load_data()
-    if email not in db["users"]:
-        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
-
-    try:
-        contents = await file.read()
-        nparr = np.frombuffer(contents, np.uint8)
-        
-        # 흑백으로 강제 변환하지 않고 컬러 원본(IMREAD_COLOR)으로 읽어옵니다.
-        img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if img_color is not None:
-            # 컬러 이미지를 그대로 JPEG로 인코딩
-            success, encoded_img = cv2.imencode('.jpg', img_color)
-            if success:
-                base64_str = base64.b64encode(encoded_img).decode('utf-8')
-                image_url = f"data:image/jpeg;base64,{base64_str}"
-            else:
-                image_url = ""
-        else:
-            image_url = ""
-
-        book_info = {
-            "title": title,
-            "author": author,
-            "image": image_url,
-            "pages": [image_url]  # 첫 번째 사진을 페이지 목록의 시작으로 저장
-        }
-        
-        if email not in db["books"]:
-            db["books"][email] = []
-        db["books"][email].append(book_info)
-        
-        save_data(db)
-
-        return {
-            "status": "success", 
-            "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
-            "book": book_info
-        }
-    except Exception as e:
-        print(f"업로드 에러 발생: {e}")
-        raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
-
-
+# --- OpenCV 스캔 보정 관련 함수들 ---
 def order_points(pts):
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
@@ -186,6 +134,8 @@ def four_point_transform(image, pts):
 def scan_book_image(image_bytes):
     np_arr = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    if image is None:
+        return None
     orig = image.copy()
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -209,13 +159,50 @@ def scan_book_image(image_bytes):
 
 
 @app.post("/api/upload-page")
-async def upload_page(email: str = Form(...), title: str = Form(...), file: UploadFile = File(...)):
-    contents = await file.read()
-    
-    # 사용자가 올린 사진을 스캔본처럼 반듯하게 펴주는 보정 함수 적용
-    contents = scan_book_image(contents)
-    
-    # 이후 기존 파일 저장 코드 진행...
+async def upload_page(
+    email: str = Form(...),
+    title: str = Form(...),
+    author: str = Form(...),
+    file: UploadFile = File(...)
+):
+    db = load_data()
+    if email not in db["users"]:
+        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
+
+    try:
+        contents = await file.read()
+        
+        # [핵심] 업로드된 이미지를 스캔 보정 함수에 통과시킴
+        processed_bytes = scan_book_image(contents)
+        
+        if processed_bytes is not None:
+            base64_str = base64.b64encode(processed_bytes).decode('utf-8')
+            image_url = f"data:image/jpeg;base64,{base64_str}"
+        else:
+            image_url = ""
+
+        book_info = {
+            "title": title,
+            "author": author,
+            "image": image_url,
+            "pages": [image_url]
+        }
+        
+        if email not in db["books"]:
+            db["books"][email] = []
+        db["books"][email].append(book_info)
+        
+        save_data(db)
+
+        return {
+            "status": "success", 
+            "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
+            "book": book_info
+        }
+    except Exception as e:
+        print(f"업로드 에러 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
+
 
 @app.post("/api/add-page")
 async def add_page(
@@ -239,20 +226,16 @@ async def add_page(
 
     try:
         contents = await file.read()
-        nparr = np.frombuffer(contents, np.uint8)
-        img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        if img_color is not None:
-            success, encoded_img = cv2.imencode('.jpg', img_color)
-            if success:
-                base64_str = base64.b64encode(encoded_img).decode('utf-8')
-                image_url = f"data:image/jpeg;base64,{base64_str}"
-            else:
-                image_url = ""
+        # [핵심] 페이지 추가 시에도 스캔 보정 함수 통과시킴
+        processed_bytes = scan_book_image(contents)
+        
+        if processed_bytes is not None:
+            base64_str = base64.b64encode(processed_bytes).decode('utf-8')
+            image_url = f"data:image/jpeg;base64,{base64_str}"
         else:
             image_url = ""
 
-        # 기존 book_info에 'pages'가 없으면 생성 후 추가
         if "pages" not in target_book:
             target_book["pages"] = [target_book.get("image", "")]
         
