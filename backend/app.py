@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
@@ -15,8 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = "../uploads"
+UPLOAD_DIR = "uploads"  # 상대 경로 수정 (서버 환경에 맞춤)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# 📌 업로드된 이미지를 웹에서 불러올 수 있도록 스태틱 디렉토리 마운트
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # 회원 데이터베이스 {email: password}
 users_db = {}  
@@ -42,7 +46,6 @@ async def login(email: str = Form(...), password: str = Form(...)):
     is_admin = (email in ADMIN_EMAILS)
     return {"status": "success", "message": "로그인 성공!", "email": email, "isAdmin": is_admin}
 
-# [정보 수정] 비밀번호 변경 API
 @app.post("/api/update-password")
 async def update_password(email: str = Form(...), current_password: str = Form(...), new_password: str = Form(...)):
     if email not in users_db or users_db[email] != current_password:
@@ -56,7 +59,6 @@ async def get_books(email: str):
     user_books = books_db.get(email, [])
     return {"books": user_books}
 
-# [운영자 전용] 전체 회원 및 서재 데이터 조회
 @app.get("/api/admin/all-data")
 async def get_all_data(email: str):
     if email not in ADMIN_EMAILS:
@@ -82,39 +84,47 @@ async def upload_page(
     if email not in users_db:
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
 
-    file_name = f"{email}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, file_name)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    try:
+        # 안전한 파일 이름 생성 (특수문자 방지)
+        safe_filename = file.filename.replace(" ", "_")
+        file_name = f"{email}_{safe_filename}"
+        file_path = os.path.join(UPLOAD_DIR, file_name)
         
-    # OpenCV 이미지 보정
-    img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-    if img is not None:
-        blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        processed_file_name = f"processed_{file_name}"
-        processed_path = os.path.join(UPLOAD_DIR, processed_file_name)
-        cv2.imwrite(processed_path, thresh)
-        # 프론트엔드에서 이미지를 불러올 수 있도록 상대 경로 또는 파일 이름 제공
-        image_url = f"/uploads/{processed_file_name}"
-    else:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # OpenCV 이미지 보정 안전 처리
         image_url = f"/uploads/{file_name}"
+        try:
+            img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+            if img is not None:
+                blurred = cv2.GaussianBlur(img, (5, 5), 0)
+                _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                processed_file_name = f"processed_{file_name}"
+                processed_path = os.path.join(UPLOAD_DIR, processed_file_name)
+                cv2.imwrite(processed_path, thresh)
+                image_url = f"/uploads/{processed_file_name}"
+        except Exception as img_err:
+            print(f"OpenCV 처리 중 예외 발생 (원본 이미지 유지): {img_err}")
 
-    book_info = {
-        "title": title,
-        "author": author,
-        "image": image_url
-    }
-    
-    if email not in books_db:
-        books_db[email] = []
-    books_db[email].append(book_info)
+        book_info = {
+            "title": title,
+            "author": author,
+            "image": image_url
+        }
+        
+        if email not in books_db:
+            books_db[email] = []
+        books_db[email].append(book_info)
 
-    return {
-        "status": "success", 
-        "message": f"'{title}' 책이 성공적으로 등록 및 보정되었습니다!",
-        "book": book_info
-    }
+        return {
+            "status": "success", 
+            "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
+            "book": book_info
+        }
+    except Exception as e:
+        print(f"업로드 에러 발생: {e}")
+        raise HTTPException(status_code=500, detail=f"업로드 실패: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
