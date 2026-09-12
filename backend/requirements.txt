@@ -3,3 +3,9 @@ uvicorn
 opencv-python-headless
 numpy
 pydantic
+python-multipart
+
+
+
+
+
