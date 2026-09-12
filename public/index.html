@@ -492,6 +492,100 @@
 
             grid.prepend(card);
         }
+
+let currentReadingBookTitle = "";
+
+// 책 카드 클릭하거나 '읽기' 버튼을 눌렀을 때 실행될 함수
+function openReaderModal(title, author, pages) {
+    currentReadingBookTitle = title;
+    document.getElementById('reader-title').innerText = title;
+    document.getElementById('reader-author').innerText = author;
+
+    renderReaderPages(pages);
+
+    document.getElementById('reader-modal').classList.remove('hidden');
+    document.getElementById('reader-modal').classList.add('flex');
+}
+
+function closeReaderModal() {
+    document.getElementById('reader-modal').classList.add('hidden');
+    document.getElementById('reader-modal').classList.remove('flex');
+    currentReadingBookTitle = "";
+}
+
+// 페이지 이미지들을 화면에 그려주는 함수
+function renderReaderPages(pages) {
+    const container = document.getElementById('reader-pages-container');
+    container.innerHTML = "";
+
+    if (!pages || pages.length === 0) {
+        container.innerHTML = `<p class="text-xs text-stone-400">등록된 페이지가 없습니다.</p>`;
+        return;
+    }
+
+    pages.forEach((pageUrl, index) => {
+        const pageDiv = document.createElement('div');
+        pageDiv.className = "w-full flex flex-col items-center bg-white p-2 rounded-lg border shadow-sm";
+        pageDiv.innerHTML = `
+            <span class="text-[10px] text-stone-400 mb-1">${index + 1} 페이지</span>
+            <img src="${pageUrl}" class="max-h-[400px] object-contain rounded-lg">
+        `;
+        container.appendChild(pageDiv);
+    });
+}
+
+// 서버로 새로운 페이지 사진을 전송하는 함수
+async function addBookPage(event) {
+    event.preventDefault();
+    const currentUser = localStorage.getItem("skybooks_logged_in_user");
+    const imageFile = document.getElementById('page-image').files[0];
+
+    if (!imageFile || !currentReadingBookTitle) return;
+
+    const formData = new FormData();
+    formData.append('email', currentUser);
+    formData.append('title', currentReadingBookTitle);
+    formData.append('file', imageFile);
+
+    try {
+        const res = await fetch(API_BASE + "/api/add-page", {
+            method: 'POST',
+            body: formData
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            alert(data.message);
+            document.getElementById('add-page-form').reset();
+
+            // 현재 열려있는 책의 페이지 목록을 최신화해서 다시 렌더링
+            // (서버에서 최신 책 정보를 다시 불러와 갱신)
+            refreshCurrentBookPages(currentUser, currentReadingBookTitle);
+        } else {
+            const errData = await res.json();
+            alert(errData.detail || "페이지 추가 실패");
+        }
+    } catch (err) {
+        alert("서버 통신 실패");
+    }
+}
+
+// 페이지 추가 후 최신 데이터로 모달 내부 갱신하는 헬퍼 함수
+async function refreshCurrentBookPages(email, title) {
+    try {
+        const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
+        const data = await res.json();
+        if (data.books) {
+            const book = data.books.find(b => b.title === title);
+            if (book) {
+                renderReaderPages(book.pages);
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+        
     </script>
 </body>
 </html>
