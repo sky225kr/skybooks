@@ -133,7 +133,7 @@
             const authBtn = document.getElementById('auth-btn');
 
             if (currentUser) {
-                userDisplay.innerText = `${currentUser} 님`;
+                userDisplay.innerText = currentUser + " 님";
                 userDisplay.classList.remove('hidden');
                 authBtn.classList.remove('hidden');
                 switchView('bookstore');
@@ -159,7 +159,7 @@
             formData.append('password', password);
 
             try {
-                const res = await fetch(`${API_BASE}/api/signup`, { method: 'POST', body: formData });
+                const res = await fetch(API_BASE + "/api/signup", { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
                     alert(data.message);
@@ -186,7 +186,7 @@
             formData.append('password', password);
 
             try {
-                const res = await fetch(`${API_BASE}/api/login`, { method: 'POST', body: formData });
+                const res = await fetch(API_BASE + "/api/login", { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
                     localStorage.setItem("skybooks_logged_in_user", data.email);
@@ -209,14 +209,14 @@
 
         async function loadBooks(email) {
             try {
-                const res = await fetch(`${API_BASE}/api/books?email=${email}`);
+                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
                 const data = await res.json();
                 const grid = document.getElementById('book-grid');
                 grid.innerHTML = "";
 
                 if (data.books && data.books.length > 0) {
-                    document.getElementById('book-count').innerText = `총 ${data.books.length권의 책이 있습니다.`;
-                    data.books.forEach(book => {
+                    document.getElementById('book-count').innerText = "총 " + data.books.length + "권의 책이 있습니다.";
+                    data.books.forEach(function(book) {
                         addBookCardToUI(book.title, book.author);
                     });
                 } else {
@@ -251,7 +251,7 @@
             formData.append('file', imageFile);
 
             try {
-                const response = await fetch(`${API_BASE}/api/upload-page`, {
+                const response = await fetch(API_BASE + "/api/upload-page", {
                     method: 'POST',
                     body: formData
                 });
@@ -275,19 +275,7 @@
             const grid = document.getElementById('book-grid');
             const card = document.createElement('div');
             card.className = "bg-white p-3 rounded-2xl shadow-sm border border-stone-200 flex flex-col justify-between hover:shadow-md transition";
-            card.innerHTML = `
-                <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3">
-                    <span class="text-stone-600 font-semibold text-sm">${title}</span>
-                </div>
-                <div>
-                    <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
-                    <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
-                    <div class="mt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-100 pt-2">
-                        <span>등록 완료</span>
-                        <span class="text-amber-800 font-medium">보정됨</span>
-                    </div>
-                </div>
-            `;
+            card.innerHTML = '<div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3"><span class="text-stone-600 font-semibold text-sm">' + title + '</span></div><div><h3 class="font-bold text-stone-800 text-sm truncate">' + title + '</h3><p class="text-xs text-stone-500 truncate mt-0.5">' + author + '</p><div class="mt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-100 pt-2"><span>등록 완료</span><span class="text-amber-800 font-medium">보정됨</span></div></div>';
             grid.prepend(card);
         }
     </script>
