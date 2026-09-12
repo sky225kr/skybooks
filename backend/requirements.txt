@@ -2,10 +2,6 @@ fastapi
 uvicorn
 opencv-python-headless
 numpy
-pydantic
-python-multipart
 passlib
 bcrypt
-
-
 
