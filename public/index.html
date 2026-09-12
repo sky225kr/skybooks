@@ -173,6 +173,38 @@
             checkLoginStatus();
         };
 
+        // ---------------------------------------------------------------
+        // 인증 헬퍼
+        // 이제 email을 매 요청마다 보내지 않고, 로그인 시 받은 토큰을
+        // Authorization 헤더에 담아 보냅니다.
+        // ---------------------------------------------------------------
+        function getToken() {
+            return localStorage.getItem("skybooks_token");
+        }
+
+        function authHeaders() {
+            const token = getToken();
+            return token ? { "Authorization": "Bearer " + token } : {};
+        }
+
+        // 인증이 필요한 요청 공통 처리: 401(토큰 만료/무효) 시 자동 로그아웃
+        async function authFetch(url, options = {}) {
+            options.headers = Object.assign({}, options.headers, authHeaders());
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                alert("로그인이 만료되었습니다. 다시 로그인해주세요.");
+                clearSession();
+                checkLoginStatus();
+            }
+            return res;
+        }
+
+        function clearSession() {
+            localStorage.removeItem("skybooks_token");
+            localStorage.removeItem("skybooks_logged_in_user");
+            localStorage.removeItem("skybooks_is_admin");
+        }
+
         function switchView(viewName) {
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('signup-view').classList.add('hidden');
@@ -188,20 +220,21 @@
         }
 
         function checkLoginStatus() {
+            const token = getToken();
             const currentUser = localStorage.getItem("skybooks_logged_in_user");
             const isAdmin = localStorage.getItem("skybooks_is_admin") === "true";
-            
+
             const userDisplay = document.getElementById('user-display');
             const authBtn = document.getElementById('auth-btn');
             const adminNavBtn = document.getElementById('admin-nav-btn');
             const editInfoBtn = document.getElementById('edit-info-btn');
 
-            if (currentUser) {
+            if (token && currentUser) {
                 userDisplay.innerText = currentUser + " 님";
                 userDisplay.classList.remove('hidden');
                 authBtn.classList.remove('hidden');
                 editInfoBtn.classList.remove('hidden');
-                
+
                 if (isAdmin) {
                     adminNavBtn.classList.remove('hidden');
                 } else {
@@ -209,7 +242,7 @@
                 }
 
                 switchView('bookstore');
-                loadBooks(currentUser);
+                loadBooks();
             } else {
                 userDisplay.classList.add('hidden');
                 authBtn.classList.add('hidden');
@@ -269,6 +302,7 @@
                 const res = await fetch(API_BASE + "/api/login", { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
+                    localStorage.setItem("skybooks_token", data.token);
                     localStorage.setItem("skybooks_logged_in_user", data.email);
                     localStorage.setItem("skybooks_is_admin", data.isAdmin);
                     alert("로그인 성공!");
@@ -281,10 +315,14 @@
             }
         }
 
-        function handleLogout() {
+        async function handleLogout() {
             if (confirm("로그아웃 하시겠습니까?")) {
-                localStorage.removeItem("skybooks_logged_in_user");
-                localStorage.removeItem("skybooks_is_admin");
+                try {
+                    await authFetch(API_BASE + "/api/logout", { method: 'POST' });
+                } catch (err) {
+                    // 서버 통신 실패해도 로컬 세션은 정리
+                }
+                clearSession();
                 checkLoginStatus();
             }
         }
@@ -300,7 +338,6 @@
         }
 
         async function updatePassword() {
-            const currentUser = localStorage.getItem("skybooks_logged_in_user");
             const currentPassword = document.getElementById('current-password').value;
             const newPassword = document.getElementById('new-password').value;
 
@@ -310,12 +347,11 @@
             }
 
             const formData = new FormData();
-            formData.append('email', currentUser);
             formData.append('current_password', currentPassword);
             formData.append('new_password', newPassword);
 
             try {
-                const res = await fetch(API_BASE + "/api/update-password", { method: 'POST', body: formData });
+                const res = await authFetch(API_BASE + "/api/update-password", { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
                     alert(data.message);
@@ -330,9 +366,9 @@
             }
         }
 
-        async function loadBooks(email) {
+        async function loadBooks() {
             try {
-                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
+                const res = await authFetch(API_BASE + "/api/books");
                 const data = await res.json();
                 const grid = document.getElementById('book-grid');
                 grid.innerHTML = "";
@@ -351,9 +387,8 @@
         }
 
         async function openAdminModal() {
-            const currentUser = localStorage.getItem("skybooks_logged_in_user");
             try {
-                const res = await fetch(API_BASE + "/api/admin/all-data?email=" + encodeURIComponent(currentUser));
+                const res = await authFetch(API_BASE + "/api/admin/all-data");
                 const data = await res.json();
                 if (res.ok) {
                     const listContainer = document.getElementById('admin-user-list');
@@ -405,19 +440,17 @@
 
         async function uploadBook(event) {
             event.preventDefault();
-            const currentUser = localStorage.getItem("skybooks_logged_in_user");
             const title = document.getElementById('book-title').value;
             const author = document.getElementById('book-author').value;
             const imageFile = document.getElementById('book-image').files[0];
 
             const formData = new FormData();
-            formData.append('email', currentUser);
             formData.append('title', title);
             formData.append('author', author);
             formData.append('file', imageFile);
 
             try {
-                const response = await fetch(API_BASE + "/api/upload-page", {
+                const response = await authFetch(API_BASE + "/api/upload-page", {
                     method: 'POST',
                     body: formData
                 });
@@ -427,7 +460,7 @@
                     alert(result.message);
                     closeUploadModal();
                     document.getElementById('upload-form').reset();
-                    loadBooks(currentUser);
+                    loadBooks();
                 } else {
                     alert("업로드 중 문제가 발생했습니다.");
                 }
@@ -462,8 +495,7 @@
             `;
 
             const openReader = async () => {
-                const currentUser = localStorage.getItem("skybooks_logged_in_user");
-                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(currentUser));
+                const res = await authFetch(API_BASE + "/api/books");
                 const data = await res.json();
                 const currentBook = data.books.find(b => b.title === title);
                 const pages = currentBook ? (currentBook.pages || [imagePath]) : [imagePath];
@@ -476,13 +508,11 @@
             const deleteBtn = card.querySelector('.delete-btn');
             deleteBtn.onclick = async () => {
                 if (confirm(`'${title}' 책을 정말 삭제하시겠습니까?`)) {
-                    const currentUser = localStorage.getItem("skybooks_logged_in_user");
                     const formData = new URLSearchParams();
-                    formData.append('email', currentUser);
                     formData.append('title', title);
 
                     try {
-                        const res = await fetch(API_BASE + "/api/books", {
+                        const res = await authFetch(API_BASE + "/api/books", {
                             method: 'DELETE',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: formData
@@ -490,7 +520,7 @@
 
                         if (res.ok) {
                             alert("삭제되었습니다.");
-                            loadBooks(currentUser);
+                            loadBooks();
                         } else {
                             const errData = await res.json();
                             alert(errData.detail || "삭제 실패");
@@ -543,18 +573,16 @@
 
         async function addBookPage(event) {
             event.preventDefault();
-            const currentUser = localStorage.getItem("skybooks_logged_in_user");
             const imageFile = document.getElementById('page-image').files[0];
 
             if (!imageFile || !currentReadingBookTitle) return;
 
             const formData = new FormData();
-            formData.append('email', currentUser);
             formData.append('title', currentReadingBookTitle);
             formData.append('file', imageFile);
 
             try {
-                const res = await fetch(API_BASE + "/api/add-page", {
+                const res = await authFetch(API_BASE + "/api/add-page", {
                     method: 'POST',
                     body: formData
                 });
@@ -563,7 +591,7 @@
                     const data = await res.json();
                     alert(data.message);
                     document.getElementById('add-page-form').reset();
-                    refreshCurrentBookPages(currentUser, currentReadingBookTitle);
+                    refreshCurrentBookPages(currentReadingBookTitle);
                 } else {
                     const errData = await res.json();
                     alert(errData.detail || "페이지 추가 실패");
@@ -573,9 +601,9 @@
             }
         }
 
-        async function refreshCurrentBookPages(email, title) {
+        async function refreshCurrentBookPages(title) {
             try {
-                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
+                const res = await authFetch(API_BASE + "/api/books");
                 const data = await res.json();
                 if (data.books) {
                     const book = data.books.find(b => b.title === title);
