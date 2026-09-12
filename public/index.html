@@ -422,18 +422,50 @@
                 : `<span class="text-stone-600 font-semibold text-sm">${title}</span>`;
 
             card.innerHTML = `
-                <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
-                    ${imageHtml}
-                </div>
                 <div>
-                    <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
-                    <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
-                    <div class="mt-2 flex items-center justify-between text-[10px] text-stone-400 border-t border-stone-100 pt-2">
-                        <span>등록 완료</span>
-                        <span class="text-amber-800 font-medium">보정됨</span>
+                    <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
+                        ${imageHtml}
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
+                        <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
                     </div>
                 </div>
+                <div class="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between">
+                    <span class="text-[10px] text-amber-800 font-medium">등록됨</span>
+                    <button class="delete-btn text-xs bg-rose-50 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg hover:bg-rose-100 transition">삭제</button>
+                </div>
             `;
+
+            // 삭제 버튼에 이벤트 연결
+            const deleteBtn = card.querySelector('.delete-btn');
+            deleteBtn.onclick = async () => {
+                if (confirm(`'${title}' 책을 정말 삭제하시겠습니까?`)) {
+                    const currentUser = localStorage.getItem("skybooks_logged_in_user");
+                    const formData = new URLSearchParams();
+                    formData.append('email', currentUser);
+                    formData.append('title', title);
+
+                    try {
+                        const res = await fetch(API_BASE + "/api/books", {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: formData
+                        });
+
+                        if (res.ok) {
+                            alert("삭제되었습니다.");
+                            loadBooks(currentUser); // 목록 새로고침
+                        } else {
+                            const errData = await res.json();
+                            alert(errData.detail || "삭제 실패");
+                        }
+                    } catch (err) {
+                        alert("서버 통신 실패");
+                    }
+                }
+            };
+
             grid.prepend(card);
         }
     </script>
