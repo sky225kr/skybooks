@@ -135,6 +135,30 @@
         </div>
     </div>
 
+    <!-- 책 읽기 및 페이지 추가 모달 -->
+    <div id="reader-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <div>
+                    <h3 id="reader-title" class="text-lg font-bold text-stone-900">책 제목</h3>
+                    <p id="reader-author" class="text-xs text-stone-500">저자</p>
+                </div>
+                <button onclick="closeReaderModal()" class="text-stone-400 hover:text-stone-700 text-sm font-bold">✕</button>
+            </div>
+
+            <!-- 페이지가 보여지는 영역 -->
+            <div class="flex-1 overflow-y-auto space-y-4 pr-2 bg-stone-50 p-3 rounded-xl border border-stone-200 min-h-[300px] flex flex-col items-center justify-center" id="reader-pages-container">
+                <!-- 동적 페이지 이미지 목록 -->
+            </div>
+
+            <!-- 페이지 추가 폼 -->
+            <form id="add-page-form" onsubmit="addBookPage(event)" class="mt-4 pt-3 border-t flex gap-2 items-center">
+                <input type="file" id="page-image" accept="image/*" required class="w-full border border-stone-300 rounded-xl px-3 py-1.5 text-xs text-stone-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200">
+                <button type="submit" class="whitespace-nowrap px-4 py-2 text-xs bg-amber-800 text-white font-semibold rounded-xl hover:bg-amber-900 transition">페이지 추가</button>
+            </form>
+        </div>
+    </div>
+
     <!-- 푸터 -->
     <footer class="w-full max-w-4xl mx-auto p-6 text-center text-xs text-stone-400 border-t border-stone-200 mt-12 space-y-1">
         <p>&copy; sky북스. All rights reserved. by sungkook.yoon</p>
@@ -143,6 +167,7 @@
     <!-- 자바스크립트 로직 -->
     <script>
         const API_BASE = "https://skybooks-server.onrender.com";
+        let currentReadingBookTitle = "";
 
         window.onload = function() {
             checkLoginStatus();
@@ -401,7 +426,6 @@
                     const result = await response.json();
                     alert(result.message);
                     closeUploadModal();
-                    addBookCardToUI(title, author, result.book.image);
                     document.getElementById('upload-form').reset();
                     loadBooks(currentUser);
                 } else {
@@ -411,30 +435,6 @@
                 alert("서버와 통신하지 못했습니다.");
             }
         }
-
-<!-- 책 읽기 및 페이지 추가 모달 -->
-<div id="reader-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] flex flex-col">
-        <div class="flex justify-between items-center mb-4 border-b pb-2">
-            <div>
-                <h3 id="reader-title" class="text-lg font-bold text-stone-900">책 제목</h3>
-                <p id="reader-author" class="text-xs text-stone-500">저자</p>
-            </div>
-            <button onclick="closeReaderModal()" class="text-stone-400 hover:text-stone-700 text-sm font-bold">✕</button>
-        </div>
-
-        <!-- 페이지가 보여지는 영역 -->
-        <div class="flex-1 overflow-y-auto space-y-4 pr-2 bg-stone-50 p-3 rounded-xl border border-stone-200 min-h-[300px] flex flex-col items-center justify-center" id="reader-pages-container">
-            <!-- 동적 페이지 이미지 목록 -->
-        </div>
-
-        <!-- 페이지 추가 폼 -->
-        <form id="add-page-form" onsubmit="addBookPage(event)" class="mt-4 pt-3 border-t flex gap-2 items-center">
-            <input type="file" id="page-image" accept="image/*" required class="w-full border border-stone-300 rounded-xl px-3 py-1.5 text-xs text-stone-500 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200">
-            <button type="submit" class="whitespace-nowrap px-4 py-2 text-xs bg-amber-800 text-white font-semibold rounded-xl hover:bg-amber-900 transition">페이지 추가</button>
-        </form>
-    </div>
-</div>
 
         function addBookCardToUI(title, author, imagePath) {
             const grid = document.getElementById('book-grid');
@@ -446,36 +446,33 @@
                 : `<span class="text-stone-600 font-semibold text-sm">${title}</span>`;
 
             card.innerHTML = `
-    <div class="cursor-pointer book-cover-area">
-        <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
-            ${imageHtml}
-        </div>
-        <div>
-            <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
-            <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
-        </div>
-    </div>
-    <div class="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between">
-        <button class="read-btn text-xs bg-amber-50 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg hover:bg-amber-100 transition">책 읽기</button>
-        <button class="delete-btn text-xs bg-rose-50 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg hover:bg-rose-100 transition">삭제</button>
-    </div>
-`;
+                <div class="cursor-pointer book-cover-area">
+                    <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
+                        ${imageHtml}
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
+                        <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
+                    </div>
+                </div>
+                <div class="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between">
+                    <button class="read-btn text-xs bg-amber-50 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg hover:bg-amber-100 transition">책 읽기</button>
+                    <button class="delete-btn text-xs bg-rose-50 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg hover:bg-rose-100 transition">삭제</button>
+                </div>
+            `;
 
-// 책 표지나 '책 읽기' 버튼을 누르면 모달 열기
-// (서버에서 가져온 전체 책 데이터에서 pages 정보를 가져오기 위해 loadBooks 함수와 연동)
-const openReader = async () => {
-    const currentUser = localStorage.getItem("skybooks_logged_in_user");
-    const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(currentUser));
-    const data = await res.json();
-    const currentBook = data.books.find(b => b.title === title);
-    const pages = currentBook ? (currentBook.pages || [imagePath]) : [imagePath];
-    openReaderModal(title, author, pages);
-};
+            const openReader = async () => {
+                const currentUser = localStorage.getItem("skybooks_logged_in_user");
+                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(currentUser));
+                const data = await res.json();
+                const currentBook = data.books.find(b => b.title === title);
+                const pages = currentBook ? (currentBook.pages || [imagePath]) : [imagePath];
+                openReaderModal(title, author, pages);
+            };
 
-card.querySelector('.book-cover-area').onclick = openReader;
-card.querySelector('.read-btn').onclick = openReader;
+            card.querySelector('.book-cover-area').onclick = openReader;
+            card.querySelector('.read-btn').onclick = openReader;
 
-            // 삭제 버튼에 이벤트 연결
             const deleteBtn = card.querySelector('.delete-btn');
             deleteBtn.onclick = async () => {
                 if (confirm(`'${title}' 책을 정말 삭제하시겠습니까?`)) {
@@ -493,7 +490,7 @@ card.querySelector('.read-btn').onclick = openReader;
 
                         if (res.ok) {
                             alert("삭제되었습니다.");
-                            loadBooks(currentUser); // 목록 새로고침
+                            loadBooks(currentUser);
                         } else {
                             const errData = await res.json();
                             alert(errData.detail || "삭제 실패");
@@ -507,99 +504,89 @@ card.querySelector('.read-btn').onclick = openReader;
             grid.prepend(card);
         }
 
-let currentReadingBookTitle = "";
+        function openReaderModal(title, author, pages) {
+            currentReadingBookTitle = title;
+            document.getElementById('reader-title').innerText = title;
+            document.getElementById('reader-author').innerText = author;
 
-// 책 카드 클릭하거나 '읽기' 버튼을 눌렀을 때 실행될 함수
-function openReaderModal(title, author, pages) {
-    currentReadingBookTitle = title;
-    document.getElementById('reader-title').innerText = title;
-    document.getElementById('reader-author').innerText = author;
+            renderReaderPages(pages);
 
-    renderReaderPages(pages);
-
-    document.getElementById('reader-modal').classList.remove('hidden');
-    document.getElementById('reader-modal').classList.add('flex');
-}
-
-function closeReaderModal() {
-    document.getElementById('reader-modal').classList.add('hidden');
-    document.getElementById('reader-modal').classList.remove('flex');
-    currentReadingBookTitle = "";
-}
-
-// 페이지 이미지들을 화면에 그려주는 함수
-function renderReaderPages(pages) {
-    const container = document.getElementById('reader-pages-container');
-    container.innerHTML = "";
-
-    if (!pages || pages.length === 0) {
-        container.innerHTML = `<p class="text-xs text-stone-400">등록된 페이지가 없습니다.</p>`;
-        return;
-    }
-
-    pages.forEach((pageUrl, index) => {
-        const pageDiv = document.createElement('div');
-        pageDiv.className = "w-full flex flex-col items-center bg-white p-2 rounded-lg border shadow-sm";
-        pageDiv.innerHTML = `
-            <span class="text-[10px] text-stone-400 mb-1">${index + 1} 페이지</span>
-            <img src="${pageUrl}" class="max-h-[400px] object-contain rounded-lg">
-        `;
-        container.appendChild(pageDiv);
-    });
-}
-
-// 서버로 새로운 페이지 사진을 전송하는 함수
-async function addBookPage(event) {
-    event.preventDefault();
-    const currentUser = localStorage.getItem("skybooks_logged_in_user");
-    const imageFile = document.getElementById('page-image').files[0];
-
-    if (!imageFile || !currentReadingBookTitle) return;
-
-    const formData = new FormData();
-    formData.append('email', currentUser);
-    formData.append('title', currentReadingBookTitle);
-    formData.append('file', imageFile);
-
-    try {
-        const res = await fetch(API_BASE + "/api/add-page", {
-            method: 'POST',
-            body: formData
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            alert(data.message);
-            document.getElementById('add-page-form').reset();
-
-            // 현재 열려있는 책의 페이지 목록을 최신화해서 다시 렌더링
-            // (서버에서 최신 책 정보를 다시 불러와 갱신)
-            refreshCurrentBookPages(currentUser, currentReadingBookTitle);
-        } else {
-            const errData = await res.json();
-            alert(errData.detail || "페이지 추가 실패");
+            document.getElementById('reader-modal').classList.remove('hidden');
+            document.getElementById('reader-modal').classList.add('flex');
         }
-    } catch (err) {
-        alert("서버 통신 실패");
-    }
-}
 
-// 페이지 추가 후 최신 데이터로 모달 내부 갱신하는 헬퍼 함수
-async function refreshCurrentBookPages(email, title) {
-    try {
-        const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
-        const data = await res.json();
-        if (data.books) {
-            const book = data.books.find(b => b.title === title);
-            if (book) {
-                renderReaderPages(book.pages);
+        function closeReaderModal() {
+            document.getElementById('reader-modal').classList.add('hidden');
+            document.getElementById('reader-modal').classList.remove('flex');
+            currentReadingBookTitle = "";
+        }
+
+        function renderReaderPages(pages) {
+            const container = document.getElementById('reader-pages-container');
+            container.innerHTML = "";
+
+            if (!pages || pages.length === 0) {
+                container.innerHTML = `<p class="text-xs text-stone-400">등록된 페이지가 없습니다.</p>`;
+                return;
+            }
+
+            pages.forEach((pageUrl, index) => {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = "w-full flex flex-col items-center bg-white p-2 rounded-lg border shadow-sm";
+                pageDiv.innerHTML = `
+                    <span class="text-[10px] text-stone-400 mb-1">${index + 1} 페이지</span>
+                    <img src="${pageUrl}" class="max-h-[400px] object-contain rounded-lg">
+                `;
+                container.appendChild(pageDiv);
+            });
+        }
+
+        async function addBookPage(event) {
+            event.preventDefault();
+            const currentUser = localStorage.getItem("skybooks_logged_in_user");
+            const imageFile = document.getElementById('page-image').files[0];
+
+            if (!imageFile || !currentReadingBookTitle) return;
+
+            const formData = new FormData();
+            formData.append('email', currentUser);
+            formData.append('title', currentReadingBookTitle);
+            formData.append('file', imageFile);
+
+            try {
+                const res = await fetch(API_BASE + "/api/add-page", {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(data.message);
+                    document.getElementById('add-page-form').reset();
+                    refreshCurrentBookPages(currentUser, currentReadingBookTitle);
+                } else {
+                    const errData = await res.json();
+                    alert(errData.detail || "페이지 추가 실패");
+                }
+            } catch (err) {
+                alert("서버 통신 실패");
             }
         }
-    } catch (e) {
-        console.error(e);
-    }
-}
-        
+
+        async function refreshCurrentBookPages(email, title) {
+            try {
+                const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(email));
+                const data = await res.json();
+                if (data.books) {
+                    const book = data.books.find(b => b.title === title);
+                    if (book) {
+                        renderReaderPages(book.pages);
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
     </script>
 </body>
 </html>
