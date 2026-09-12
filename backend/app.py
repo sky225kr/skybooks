@@ -88,7 +88,6 @@ async def get_all_data(email: str):
             "books": user_books
         })
     return {"users": all_users_info}
-
 @app.post("/api/upload-page")
 async def upload_page(
     email: str = Form(...),
@@ -104,20 +103,17 @@ async def upload_page(
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         
-        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        # 흑백으로 강제 변환하지 않고 컬러 원본(IMREAD_COLOR)으로 읽어옵니다.
+        img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        if img is not None:
-            blurred = cv2.GaussianBlur(img, (5, 5), 0)
-            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            processed_img = thresh
-        else:
-            img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            processed_img = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY) if img_color is not None else nparr
-
-        success, encoded_img = cv2.imencode('.jpg', processed_img)
-        if success:
-            base64_str = base64.b64encode(encoded_img).decode('utf-8')
-            image_url = f"data:image/jpeg;base64,{base64_str}"
+        if img_color is not None:
+            # 컬러 이미지를 그대로 JPEG로 인코딩
+            success, encoded_img = cv2.imencode('.jpg', img_color)
+            if success:
+                base64_str = base64.b64encode(encoded_img).decode('utf-8')
+                image_url = f"data:image/jpeg;base64,{base64_str}"
+            else:
+                image_url = ""
         else:
             image_url = ""
 
@@ -135,7 +131,7 @@ async def upload_page(
 
         return {
             "status": "success", 
-            "message": f"'{title}' 책이 성공적으로 등록 및 보정되었습니다!",
+            "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
             "book": book_info
         }
     except Exception as e:
