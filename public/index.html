@@ -81,7 +81,7 @@
         // Render 백엔드 서버 주소
         const API_BASE = "https://skybooks-server.onrender.com";
 
-        // 서재 목록 불러오기 (임시 예시 연동)
+        // 서재 상태 확인
         async function fetchBooks() {
             try {
                 const response = await fetch(`${API_BASE}/`);
@@ -102,10 +102,36 @@
             document.getElementById('upload-modal').classList.remove('flex');
         }
 
+        // 실제 서버로 책 데이터 및 이미지 전송
         async function uploadBook(event) {
             event.preventDefault();
-            alert("책 업로드 기능이 연결되었습니다!");
-            closeUploadModal();
+
+            const title = document.getElementById('book-title').value;
+            const author = document.getElementById('book-author').value;
+            const imageFile = document.getElementById('book-image').files[0];
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('author', author);
+            formData.append('file', imageFile);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert("책이 성공적으로 업로드되었습니다!");
+                    closeUploadModal();
+                    location.reload();
+                } else {
+                    alert("업로드 중 문제가 발생했습니다.");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("서버와 통신하지 못했습니다.");
+            }
         }
 
         // 페이지 로드 시 실행
@@ -113,3 +139,4 @@
     </script>
 </body>
 </html>
+             
