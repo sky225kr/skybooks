@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import base64
+import json
+import os
 
 app = FastAPI()
 
@@ -14,25 +16,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 회원 데이터베이스 {email: password}
-users_db = {}  
-# 계정별 책 목록 데이터베이스 {email: [ {title, author, image}, ... ] }
-books_db = {}  
+DB_FILE = "database.json"
 
-# 👑 운영자로 지정할 이메일 목록 (원하는 이메일로 변경 가능)
-ADMIN_EMAILS = ["yooneeo@gmail.com"]
+# 데이터 파일 불러오기 또는 초기화
+def load_data():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"users": {}, "books": {}}
+
+# 데이터 파일 저장하기
+def save_data(data):
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+ADMIN_EMAILS = ["admin@skybooks.com"]
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
-    if email in users_db:
+    db = load_data()
+    if email in db["users"]:
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
-    users_db[email] = password
-    books_db[email] = []
+    
+    db["users"][email] = password
+    db["books"][email] = []
+    save_data(db)
+    
     return {"status": "success", "message": "회원가입이 완료되었습니다!"}
 
 @app.post("/api/login")
 async def login(email: str = Form(...), password: str = Form(...)):
-    if email not in users_db or users_db[email] != password:
+    db = load_data()
+    if email not in db["users"] or db["users"][email] != password:
         raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
     
     is_admin = (email in ADMIN_EMAILS)
@@ -40,25 +58,30 @@ async def login(email: str = Form(...), password: str = Form(...)):
 
 @app.post("/api/update-password")
 async def update_password(email: str = Form(...), current_password: str = Form(...), new_password: str = Form(...)):
-    if email not in users_db or users_db[email] != current_password:
+    db = load_data()
+    if email not in db["users"] or db["users"][email] != current_password:
         raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
     
-    users_db[email] = new_password
+    db["users"][email] = new_password
+    save_data(db)
+    
     return {"status": "success", "message": "비밀번호가 성공적으로 변경되었습니다!"}
 
 @app.get("/api/books")
 async def get_books(email: str):
-    user_books = books_db.get(email, [])
+    db = load_data()
+    user_books = db["books"].get(email, [])
     return {"books": user_books}
 
 @app.get("/api/admin/all-data")
 async def get_all_data(email: str):
+    db = load_data()
     if email not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     
     all_users_info = []
-    for user_email in users_db.keys():
-        user_books = books_db.get(user_email, [])
+    for user_email in db["users"].keys():
+        user_books = db["books"].get(user_email, [])
         all_users_info.append({
             "email": user_email,
             "bookCount": len(user_books),
@@ -73,14 +96,14 @@ async def upload_page(
     author: str = Form(...),
     file: UploadFile = File(...)
 ):
-    if email not in users_db:
+    db = load_data()
+    if email not in db["users"]:
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
 
     try:
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         
-        # OpenCV 디코딩
         img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
         
         if img is not None:
@@ -104,9 +127,11 @@ async def upload_page(
             "image": image_url
         }
         
-        if email not in books_db:
-            books_db[email] = []
-        books_db[email].append(book_info)
+        if email not in db["books"]:
+            db["books"][email] = []
+        db["books"][email].append(book_info)
+        
+        save_data(db)
 
         return {
             "status": "success", 
