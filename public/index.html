@@ -446,20 +446,34 @@
                 : `<span class="text-stone-600 font-semibold text-sm">${title}</span>`;
 
             card.innerHTML = `
-                <div>
-                    <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
-                        ${imageHtml}
-                    </div>
-                    <div>
-                        <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
-                        <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
-                    </div>
-                </div>
-                <div class="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between">
-                    <span class="text-[10px] text-amber-800 font-medium">등록됨</span>
-                    <button class="delete-btn text-xs bg-rose-50 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg hover:bg-rose-100 transition">삭제</button>
-                </div>
-            `;
+    <div class="cursor-pointer book-cover-area">
+        <div class="bg-stone-100 aspect-[3/4] rounded-xl flex items-center justify-center text-stone-400 text-xs mb-3 overflow-hidden">
+            ${imageHtml}
+        </div>
+        <div>
+            <h3 class="font-bold text-stone-800 text-sm truncate">${title}</h3>
+            <p class="text-xs text-stone-500 truncate mt-0.5">${author}</p>
+        </div>
+    </div>
+    <div class="mt-3 pt-2 border-t border-stone-100 flex items-center justify-between">
+        <button class="read-btn text-xs bg-amber-50 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg hover:bg-amber-100 transition">책 읽기</button>
+        <button class="delete-btn text-xs bg-rose-50 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg hover:bg-rose-100 transition">삭제</button>
+    </div>
+`;
+
+// 책 표지나 '책 읽기' 버튼을 누르면 모달 열기
+// (서버에서 가져온 전체 책 데이터에서 pages 정보를 가져오기 위해 loadBooks 함수와 연동)
+const openReader = async () => {
+    const currentUser = localStorage.getItem("skybooks_logged_in_user");
+    const res = await fetch(API_BASE + "/api/books?email=" + encodeURIComponent(currentUser));
+    const data = await res.json();
+    const currentBook = data.books.find(b => b.title === title);
+    const pages = currentBook ? (currentBook.pages || [imagePath]) : [imagePath];
+    openReaderModal(title, author, pages);
+};
+
+card.querySelector('.book-cover-area').onclick = openReader;
+card.querySelector('.read-btn').onclick = openReader;
 
             // 삭제 버튼에 이벤트 연결
             const deleteBtn = card.querySelector('.delete-btn');
