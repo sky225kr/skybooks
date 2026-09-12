@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
@@ -7,7 +7,6 @@ import os
 
 app = FastAPI()
 
-# 프론트엔드와 통신을 위한 CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,26 +18,68 @@ app.add_middleware(
 UPLOAD_DIR = "../uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# 임시 회원 데이터베이스 (실서비스 시 DB 사용)
+users_db = {}  # {email: password}
+# 계정별 책 목록 데이터베이스
+books_db = {}  # {email: [ {title, author, image_path, memo}, ... ] }
+
+@app.post("/api/signup")
+async def signup(email: str = Form(...), password: str = Form(...)):
+    if email in users_db:
+        raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
+    users_db[email] = password
+    books_db[email] = []
+    return {"status": "success", "message": "회원가입이 완료되었습니다!"}
+
+@app.post("/api/login")
+async def login(email: str = Form(...), password: str = Form(...)):
+    if email not in users_db or users_db[email] != password:
+        raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
+    return {"status": "success", "message": "로그인 성공!", "email": email}
+
+@app.get("/api/books")
+async def get_books(email: str):
+    user_books = books_db.get(email, [])
+    return {"books": user_books}
+
 @app.post("/api/upload-page")
-async def upload_page(file: UploadFile = File(...), title: str = Form(...)):
-    # 1. 업로드된 파일 저장 경로 설정
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+async def upload_page(
+    email: str = Form(...),
+    title: str = Form(...),
+    author: str = Form(...),
+    file: UploadFile = File(...)
+):
+    if email not in users_db:
+        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
+
+    file_path = os.path.join(UPLOAD_DIR, f"{email}_{file.filename}")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    # 2. OpenCV를 이용한 이미지 보정 (흑백 이진화 처리)
+    # OpenCV 이미지 보정
     img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-    blurred = cv2.GaussianBlur(img, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if img is not None:
+        blurred = cv2.GaussianBlur(img, (5, 5), 0)
+        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        processed_path = os.path.join(UPLOAD_DIR, f"processed_{email}_{file.filename}")
+        cv2.imwrite(processed_path, thresh)
+    else:
+        processed_path = file_path
+
+    book_info = {
+        "title": title,
+        "author": author,
+        "image": processed_path
+    }
     
-    processed_path = os.path.join(UPLOAD_DIR, f"processed_{file.filename}")
-    cv2.imwrite(processed_path, thresh)
+    if email not in books_db:
+        books_db[email] = []
+    books_db[email].append(book_info)
 
     return {
         "status": "success", 
-        "message": f"'{title}' 책의 페이지가 성공적으로 보정되었습니다!",
-        "original": file_path,
-        "processed": processed_path
+        "message": f"'{title}' 책이 성공적으로 등록 및 보정되었습니다!",
+        "book": book_info
     }
 
 if __name__ == "__main__":
