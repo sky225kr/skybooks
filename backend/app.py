@@ -88,6 +88,26 @@ async def get_all_data(email: str):
             "books": user_books
         })
     return {"users": all_users_info}
+
+@app.delete("/api/books")
+async def delete_book(email: str = Form(...), title: str = Form(...)):
+    db = load_data()
+    if email not in db["users"]:
+        raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
+    
+    user_books = db["books"].get(email, [])
+    # 일치하는 제목을 가진 책을 제외하고 남김
+    new_books = [book for book in user_books if book["title"] != title]
+    
+    if len(new_books) == len(user_books):
+        raise HTTPException(status_code=404, detail="해당 책을 찾을 수 없습니다.")
+    
+    db["books"][email] = new_books
+    save_data(db)
+    
+    return {"status": "success", "message": f"'{title}' 책이 삭제되었습니다."}
+
+
 @app.post("/api/upload-page")
 async def upload_page(
     email: str = Form(...),
