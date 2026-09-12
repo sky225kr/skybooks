@@ -16,8 +16,8 @@
                 📚 sky북스 <span class="text-xs font-normal bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">내 서재</span>
             </h1>
             <div class="flex items-center gap-4">
-                <span class="text-xs text-stone-500 hidden sm:inline" id="user-email">yooneeeo@gmail.com 님</span>
-                <button onclick="handleLogout()" class="text-xs font-medium text-stone-600 hover:text-stone-900 border border-stone-300 px-3 py-1.5 rounded-lg transition">로그아웃</button>
+                <span class="text-xs text-stone-500 hidden sm:inline" id="user-display">yooneeeo@gmail.com 님</span>
+                <button id="auth-btn" onclick="handleAuth()" class="text-xs font-medium text-stone-600 hover:text-stone-900 border border-stone-300 px-3 py-1.5 rounded-lg transition">로그아웃</button>
             </div>
         </div>
     </header>
@@ -25,20 +25,33 @@
     <!-- 메인 책꽂이 컨테이너 -->
     <main class="w-full max-w-4xl mx-auto px-6 py-8 flex-1">
         
-        <!-- 상단 액션 바 -->
-        <div class="flex justify-between items-center mb-6">
-            <div>
-                <h2 class="text-2xl font-bold text-stone-900">나의 책꽂이</h2>
-                <p class="text-xs text-stone-500 mt-0.5" id="book-count">서재를 불러오는 중...</p>
+        <!-- 로그인 안 된 상태일 때 보여줄 화면 -->
+        <div id="login-view" class="hidden flex flex-col items-center justify-center py-20 text-center">
+            <div class="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full space-y-4 border border-stone-200">
+                <h3 class="text-xl font-bold text-stone-900">로그인이 필요합니다</h3>
+                <p class="text-xs text-stone-500">sky북스를 이용하시려면 이메일을 입력해주세요.</p>
+                <input type="email" id="login-email" placeholder="이메일 입력 (예: yooneeeo@gmail.com)" class="w-full border border-stone-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-800">
+                <button onclick="performLogin()" class="w-full py-2 bg-amber-800 text-white text-sm font-semibold rounded-xl hover:bg-amber-900 transition">로그인</button>
             </div>
-            <button onclick="openUploadModal()" class="flex items-center gap-2 px-4 py-2 bg-amber-800 text-white text-sm font-semibold rounded-xl shadow hover:bg-amber-900 transition">
-                <span>+ 새 책 추가하기</span>
-            </button>
         </div>
 
-        <!-- 책 그리드 목록 -->
-        <div id="book-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            <!-- 책 목록이 동적으로 들어갑니다 -->
+        <!-- 로그인 된 상태일 때 보여줄 서재 화면 -->
+        <div id="bookstore-view">
+            <!-- 상단 액션 바 -->
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-stone-900">나의 책꽂이</h2>
+                    <p class="text-xs text-stone-500 mt-0.5" id="book-count">서재를 불러오는 중...</p>
+                </div>
+                <button onclick="openUploadModal()" class="flex items-center gap-2 px-4 py-2 bg-amber-800 text-white text-sm font-semibold rounded-xl shadow hover:bg-amber-900 transition">
+                    <span>+ 새 책 추가하기</span>
+                </button>
+            </div>
+
+            <!-- 책 그리드 목록 -->
+            <div id="book-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <!-- 책 목록이 동적으로 들어갑니다 -->
+            </div>
         </div>
 
     </main>
@@ -97,7 +110,54 @@
         const API_BASE = "https://skybooks-server.onrender.com";
         let currentSelectedBook = null;
 
-        // 서재 상태 확인
+        // 페이지 로드 시 로그인 상태 체크
+        window.onload = function() {
+            checkLoginStatus();
+            fetchBooks();
+        };
+
+        function checkLoginStatus() {
+            const user = localStorage.getItem("skybooks_user");
+            if (user) {
+                document.getElementById('user-display').innerText = `${user} 님`;
+                document.getElementById('user-display').classList.remove('hidden');
+                document.getElementById('auth-btn').innerText = "로그아웃";
+                document.getElementById('bookstore-view').classList.remove('hidden');
+                document.getElementById('login-view').classList.add('hidden');
+            } else {
+                document.getElementById('user-display').classList.add('hidden');
+                document.getElementById('auth-btn').innerText = "로그인";
+                document.getElementById('bookstore-view').classList.add('hidden');
+                document.getElementById('login-view').classList.remove('hidden');
+            }
+        }
+
+        // 로그인/로그아웃 버튼 통합 처리
+        function handleAuth() {
+            const user = localStorage.getItem("skybooks_user");
+            if (user) {
+                if (confirm("정말 로그아웃 하시겠습니까?")) {
+                    localStorage.removeItem("skybooks_user");
+                    alert("로그아웃되었습니다.");
+                    checkLoginStatus();
+                }
+            } else {
+                checkLoginStatus();
+            }
+        }
+
+        function performLogin() {
+            const emailInput = document.getElementById('login-email').value;
+            if (!emailInput) {
+                alert("이메일을 입력해주세요.");
+                return;
+            }
+            localStorage.setItem("skybooks_user", emailInput);
+            alert("로그인되었습니다!");
+            document.getElementById('login-email').value = "";
+            checkLoginStatus();
+        }
+
         async function fetchBooks() {
             try {
                 const response = await fetch(`${API_BASE}/`);
@@ -108,17 +168,6 @@
             }
         }
 
-        // 1. 로그아웃 기능
-        function handleLogout() {
-            if (confirm("로그아웃 하시겠습니까?")) {
-                alert("성공적으로 로그아웃되었습니다.");
-                // 화면 초기화 또는 로그인 상태 해제 연출
-                document.getElementById('user-email').innerText = "손님 님";
-                location.reload();
-            }
-        }
-
-        // 모달 제어 함수들
         function openUploadModal() {
             document.getElementById('upload-modal').classList.remove('hidden');
             document.getElementById('upload-modal').classList.add('flex');
@@ -144,7 +193,6 @@
             document.getElementById('detail-modal').classList.remove('flex');
         }
 
-        // 2. 책 내용/메모 저장 기능
         function saveBookMemo() {
             const memo = document.getElementById('book-memo').value;
             if (currentSelectedBook) {
@@ -154,7 +202,6 @@
             }
         }
 
-        // 서버로 책 업로드
         async function uploadBook(event) {
             event.preventDefault();
 
@@ -188,7 +235,6 @@
             }
         }
 
-        // 화면에 책 카드 추가 (클릭 시 상세 모달 연동)
         function addBookCard(title, author, imgSrc) {
             const grid = document.getElementById('book-grid');
             const card = document.createElement('div');
@@ -210,8 +256,6 @@
             `;
             grid.prepend(card);
         }
-
-        fetchBooks();
     </script>
 </body>
 </html>
