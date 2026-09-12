@@ -1,10 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
-import shutil
-import os
+import base64
 
 app = FastAPI()
 
@@ -15,12 +13,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-UPLOAD_DIR = "uploads"  # 상대 경로 수정 (서버 환경에 맞춤)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# 📌 업로드된 이미지를 웹에서 불러올 수 있도록 스태틱 디렉토리 마운트
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # 회원 데이터베이스 {email: password}
 users_db = {}  
@@ -85,27 +77,30 @@ async def upload_page(
         raise HTTPException(status_code=401, detail="인증되지 않은 사용자입니다.")
 
     try:
-        # 안전한 파일 이름 생성 (특수문자 방지)
-        safe_filename = file.filename.replace(" ", "_")
-        file_name = f"{email}_{safe_filename}"
-        file_path = os.path.join(UPLOAD_DIR, file_name)
+        # 업로드된 파일을 메모리 바이트로 읽기
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
         
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        # OpenCV 이미지 보정 안전 처리
-        image_url = f"/uploads/{file_name}"
-        try:
-            img = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
-            if img is not None:
-                blurred = cv2.GaussianBlur(img, (5, 5), 0)
-                _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                processed_file_name = f"processed_{file_name}"
-                processed_path = os.path.join(UPLOAD_DIR, processed_file_name)
-                cv2.imwrite(processed_path, thresh)
-                image_url = f"/uploads/{processed_file_name}"
-        except Exception as img_err:
-            print(f"OpenCV 처리 중 예외 발생 (원본 이미지 유지): {img_err}")
+        # OpenCV로 이미지 디코딩
+        img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        
+        if img is not None:
+            # OpenCV 보정 처리 (가우스 블러 + 오츠 이진화)
+            blurred = cv2.GaussianBlur(img, (5, 5), 0)
+            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            processed_img = thresh
+        else:
+            # 그레이스케일 변환 실패 시 컬러로 읽어서 처리 시도
+            img_color = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            processed_img = cv2.cvtColor(img_color, cv2.COLOR_BGR2GRAY) if img_color is not None else nparr
+
+        # 처리된 이미지를 메모리상에서 jpg 코딩 후 Base64로 변환
+        success, encoded_img = cv2.imencode('.jpg', processed_img)
+        if success:
+            base64_str = base64.b64encode(encoded_img).decode('utf-8')
+            image_url = f"data:image/jpeg;base64,{base64_str}"
+        else:
+            image_url = ""
 
         book_info = {
             "title": title,
@@ -119,7 +114,7 @@ async def upload_page(
 
         return {
             "status": "success", 
-            "message": f"'{title}' 책이 성공적으로 등록되었습니다!",
+            "message": f"'{title}' 책이 성공적으로 등록 및 보정되었습니다!",
             "book": book_info
         }
     except Exception as e:
