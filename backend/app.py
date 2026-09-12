@@ -19,9 +19,9 @@ UPLOAD_DIR = "../uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # 임시 회원 데이터베이스 (실서비스 시 DB 사용)
-users_db = {}  # {email: password}
+users_db = {"admin@skybooks.com": "admin1234"}  # 기본 운영자 계정 포함
 # 계정별 책 목록 데이터베이스
-books_db = {}  # {email: [ {title, author, image_path, memo}, ... ] }
+books_db = {}  
 
 @app.post("/api/signup")
 async def signup(email: str = Form(...), password: str = Form(...)):
@@ -35,12 +35,31 @@ async def signup(email: str = Form(...), password: str = Form(...)):
 async def login(email: str = Form(...), password: str = Form(...)):
     if email not in users_db or users_db[email] != password:
         raise HTTPException(status_code=400, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
-    return {"status": "success", "message": "로그인 성공!", "email": email}
+    
+    # 운영자 여부 판단 (admin@skybooks.com 이면 운영자 권한 부여)
+    is_admin = (email == "admin@skybooks.com")
+    return {"status": "success", "message": "로그인 성공!", "email": email, "isAdmin": is_admin}
 
 @app.get("/api/books")
 async def get_books(email: str):
     user_books = books_db.get(email, [])
     return {"books": user_books}
+
+# [운영자 전용] 전체 회원 및 서재 데이터 조회
+@app.get("/api/admin/all-data")
+async def get_all_data(email: str):
+    if email != "admin@skybooks.com":
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
+    
+    all_users_info = []
+    for user_email in users_db.keys():
+        user_books = books_db.get(user_email, [])
+        all_users_info.append({
+            "email": user_email,
+            "bookCount": len(user_books),
+            "books": user_books
+        })
+    return {"users": all_users_info}
 
 @app.post("/api/upload-page")
 async def upload_page(
